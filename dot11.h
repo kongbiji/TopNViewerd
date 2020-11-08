@@ -47,7 +47,8 @@ namespace dot11_fc
 
         enum : uint8_t // type = DATA
         {
-            _NO_DATA = 0x4
+            _NO_DATA = 0x4,
+            QOS_DATA = 0xc
         };
 
     };

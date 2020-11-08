@@ -26,7 +26,6 @@
 #include <regex>
 #include <algorithm>
 #include <random>
-#include "gtrace.h"
 #include "mac.h"
 #include "radiotap.h"
 #include "dot11.h"

@@ -19,6 +19,7 @@ int client_sock;
 int server_sock;
 bool ap_active;
 bool hopping_active;
+bool staion_active;
 std::vector<int> channel_list;
 
 bool get_channel()
@@ -54,9 +55,11 @@ bool get_channel()
     }
 
     channel_list.pop_back();
-
-    // channel_list.clear();
-    // channel_list.push_back(2);
+    int k = 0;
+    for(auto iter = channel_list.begin(); iter != channel_list.end(); ++iter){
+        printf("channel >> %d\n", channel_list[k]);
+        k++;
+    }
 
     auto rng = std::default_random_engine{};
     std::shuffle(std::begin(channel_list), std::end(channel_list), rng);
@@ -75,6 +78,7 @@ void hopping_func()
             if (hopping_active)
             {
                 system_string = "iwconfig wlan0 channel " + std::to_string(channel);
+                //printf("set channel >> %d\n", channel);
                 system(system_string.c_str());
                 usleep(1000000);
             }
@@ -105,7 +109,8 @@ void get_ap()
         }
 
         //get station info
-        if ((frame->fc.type == dot11_fc::type::DATA) && (frame->fc.subtype == dot11_fc::subtype::_NO_DATA))
+        if ((frame->fc.type == dot11_fc::type::DATA) &&
+         (frame->fc.subtype == dot11_fc::subtype::_NO_DATA || frame->fc.subtype == dot11_fc::subtype::QOS_DATA))
         {
             dot11_data_frame *data_frame = (dot11_data_frame *)(packet + rt_header->it_len);
 
@@ -162,8 +167,6 @@ void get_ap()
             //cnt
             std::string ESSID = ((dot11_tagged_param *)beacon_frame->get_tag(0, dot11_tags_len))->get_ssid();
 
-            //GTRACE("%s %s\n", ESSID.c_str(), mac_to_string(BSSID).c_str());
-
             ap_info temp_ap_info;
             temp_ap_info.BSSID = BSSID;
             temp_ap_info.antsignal = antsignal;
@@ -217,9 +220,6 @@ void get_ap()
 int main(int argc, char *argv[])
 {
     int server_port = 9998;
-
-    gtrace_close();
-    gtrace_open(0, 0, false, "test.log");
 
     //socket connection
     {
@@ -292,8 +292,6 @@ int main(int argc, char *argv[])
 
         while (true)
         {
-            GTRACE("Wait\n");
-
             memset(buf, 0x00, BUF_SIZE);
             recv_data(client_sock, buf);
 
@@ -301,6 +299,8 @@ int main(int argc, char *argv[])
             {
                 continue;
             }
+
+            printf("recv data >> %s\n", buf);
 
             memset(data, 0x00, BUF_SIZE);
 
@@ -329,6 +329,7 @@ int main(int argc, char *argv[])
                 recv_data(client_sock, buf);
                 std::string system_string;
                 std::string channel = buf;
+                printf("check channel >> %s\n", channel.c_str());
                 system_string = "iwconfig wlan0 channel " + channel;
                 usleep(1000000);
                 system(system_string.c_str());
