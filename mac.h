@@ -4,13 +4,13 @@
 ;
 #pragma pack(push, 1)
 
-class Mac
+class MAC
 {
 public:
     uint8_t addr[6];
 
-    Mac() {}
-    Mac(uint8_t * _mac)
+    MAC() {}
+    MAC(uint8_t * _mac)
     {
         memcpy(this->addr, _mac, 6);
     }
@@ -18,7 +18,7 @@ public:
     {
         memcpy(this->addr, addr, 6);
     }
-    bool operator ==(const Mac & ref)
+    bool operator ==(const MAC & ref)
     {
         return !memcmp(this->addr, ref.addr, 6);
     }
@@ -26,7 +26,7 @@ public:
     {
         return !memcmp(this->addr, addr, 6);
     }
-    bool operator !=(const Mac & ref)
+    bool operator !=(const MAC & ref)
     {
         return !memcmp(this->addr, ref.addr, 6);
     }
@@ -35,7 +35,7 @@ public:
         return !memcmp(this->addr, addr, 6);
     }
 
-    bool operator <(const Mac & ref) const
+    bool operator <(const MAC & ref) const
     {
         return (memcmp(this->addr, ref.addr, 6) < 0) ? true : false;
     }

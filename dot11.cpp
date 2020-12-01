@@ -15,7 +15,6 @@ uint8_t * dot11_data_frame::get_BSSID(void)
         return this->addr3;
         break;
     case 0b11:  //RTDS
-        printf("i don't know\n");
         return nullptr;
         break;
     default:
@@ -38,7 +37,6 @@ uint8_t * dot11_mgt_frame::get_BSSID(void)
         return this->addr3;
         break;
     case 0b11:  //RTDS
-        printf("i don't know\n");
         return nullptr;
         break;
     default:

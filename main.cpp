@@ -3,13 +3,13 @@
 typedef struct ap_map_info
 {
     int channel;
-    std::map<Mac, data_station_info> map_station;
+    std::map<MAC, data_station_info> map_station;
 } ap_map_info;
 
 int debug_num;
 
-static std::map<Mac, ap_map_info> ap_map;
-static std::map<Mac, bool> ap_map_broadcast;
+static std::map<MAC, ap_map_info> ap_map;
+static std::map<MAC, bool> ap_map_broadcast;
 
 pcap_t *handle;
 char dev[BUF_SIZE] = {0};
@@ -49,7 +49,6 @@ bool get_channel()
     {
         std::smatch m = *it;
         channel_list.push_back(std::stoi(m.str(2)));
-        // printf("%s\n", m.str(2).c_str());
         ++it;
         i++;
     }
@@ -57,7 +56,6 @@ bool get_channel()
     channel_list.pop_back();
     int k = 0;
     for(auto iter = channel_list.begin(); iter != channel_list.end(); ++iter){
-        printf("channel >> %d\n", channel_list[k]);
         k++;
     }
 
@@ -78,7 +76,6 @@ void hopping_func()
             if (hopping_active)
             {
                 system_string = "iwconfig wlan0 channel " + std::to_string(channel);
-                //printf("set channel >> %d\n", channel);
                 system(system_string.c_str());
                 usleep(1000000);
             }
@@ -101,6 +98,10 @@ void get_ap()
             break;
 
         radiotap_header *rt_header = (radiotap_header *)(packet);
+        if(rt_header->it_len < sizeof(radiotap_header) || rt_header->it_len > header->caplen){
+            continue;
+        }
+
         dot11_mgt_frame *frame = (dot11_mgt_frame *)(packet + rt_header->it_len);
 
         if (frame->fc.type == dot11_fc::type::CONTROL)
@@ -123,8 +124,8 @@ void get_ap()
 
             memcpy(selected_ap, data_frame->get_BSSID(), 6);
 
-            Mac BSSID = selected_ap;
-            Mac STATION = data_frame->addr2;
+            MAC BSSID = selected_ap;
+            MAC STATION = data_frame->addr2;
             uint8_t antsignal = *rt_header->radiotap_present_flag(DBM_ANTSIGNAL);
 
             //append ap_map_broadcast
@@ -139,7 +140,6 @@ void get_ap()
             d_s_info.antsignal = antsignal;
             d_s_info.isAttack = false;
 
-            //            if (ap_map[selected_ap].map_station.find(STATION) == ap_map[selected_ap].map_station.end())
             {
                 ap_map[selected_ap].map_station[STATION] = d_s_info;
 
@@ -150,8 +150,6 @@ void get_ap()
                 memcpy(data, buf_string.c_str(), buf_string.length());
 
                 send_data(client_sock, data);
-
-                printf("send Station info %s\n", data);
             }
         }
 
@@ -161,7 +159,7 @@ void get_ap()
             dot11_beacon_frame *beacon_frame = (dot11_beacon_frame *)(frame);
             int dot11_tags_len = header->len - (rt_header->it_len + sizeof(dot11_beacon_frame));
 
-            Mac BSSID = frame->get_BSSID(); //key
+            MAC BSSID = frame->get_BSSID(); //key
             uint8_t antsignal = *rt_header->radiotap_present_flag(DBM_ANTSIGNAL);
             uint8_t channel = *((dot11_tagged_param *)beacon_frame->get_tag(3, dot11_tags_len))->get_data();
             //cnt
@@ -173,7 +171,6 @@ void get_ap()
             temp_ap_info.channel = channel;
             temp_ap_info.ESSID = ESSID;
 
-            //            if (ap_map.find(BSSID) == ap_map.end())
             {
                 temp_ap_info.cnt = 1;
 
@@ -207,7 +204,6 @@ void get_ap()
                     {
                         if (pcap_sendpacket(handle, packet, header->caplen) != 0)
                         {
-                            printf("error\n");
                         }
                         usleep(2000);
                     }
@@ -219,20 +215,18 @@ void get_ap()
 
 int main(int argc, char *argv[])
 {
-    int server_port = 9998;
+    int server_port = 2345;
 
     //socket connection
     {
         if ((server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
         {
-            printf("socket create error\n");
             return -1;
         }
 
         int option = 1;
         if (setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)) < 0)
         {
-            printf("socket option set error\n");
             return -1;
         }
 
@@ -246,22 +240,18 @@ int main(int argc, char *argv[])
 
         if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         {
-            printf("bind error\n");
             return -1;
         }
 
         if (listen(server_sock, 5) < 0)
         {
-            printf("listen error\n");
             return -1;
         }
 
         if ((client_sock = accept(server_sock, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_size)) < 0)
         {
-            printf("accept error\n");
         }
 
-        printf("connection ok\n");
     }
 
     //pcap open
@@ -269,11 +259,16 @@ int main(int argc, char *argv[])
         memcpy(dev, "wlan0", 5);
         handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
 
+        char buf[1024];
+        memset(buf, 0x00, BUF_SIZE);
         if (handle == NULL)
         {
-            printf("fail open_offline...%s\n", errbuf);
+            memcpy(buf, "5", 1);
+            send_data(client_sock, buf);
             return -1;
         }
+        memcpy(buf, "6", 1);
+        send_data(client_sock, buf);
     }
 
     //switch
@@ -299,8 +294,6 @@ int main(int argc, char *argv[])
             {
                 continue;
             }
-
-            printf("recv data >> %s\n", buf);
 
             memset(data, 0x00, BUF_SIZE);
 
@@ -329,14 +322,12 @@ int main(int argc, char *argv[])
                 recv_data(client_sock, buf);
                 std::string system_string;
                 std::string channel = buf;
-                printf("check channel >> %s\n", channel.c_str());
                 system_string = "iwconfig wlan0 channel " + channel;
                 usleep(1000000);
                 system(system_string.c_str());
             }
             else
             {
-                printf("switch error\n");
                 break;
             }
         }

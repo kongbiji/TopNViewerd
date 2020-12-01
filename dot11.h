@@ -83,13 +83,13 @@ typedef struct dot11_frame
 {
     struct frame_control fc;
     uint16_t dur;
-    Mac addr1;  //receiver addr
+    MAC addr1;  //receiver addr
 }dot11_frame;
 
 typedef struct dot11_data_frame : dot11_frame
 {
-    Mac addr2;  //Transmitter address
-    Mac addr3;
+    MAC addr2;  //Transmitter address
+    MAC addr3;
     uint16_t frag_num: 4,
         seq_num: 12;
     uint8_t * get_BSSID(void);
@@ -98,8 +98,8 @@ typedef struct dot11_data_frame : dot11_frame
 
 typedef struct dot11_mgt_frame : dot11_frame
 {
-    Mac addr2;  //Transmitter address
-    Mac addr3;
+    MAC addr2;  //Transmitter address
+    MAC addr3;
     uint16_t frag_num: 4,
         seq_num: 12;
     uint8_t * get_tag(uint8_t tag, int tags_len);
