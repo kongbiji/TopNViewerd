@@ -29,5 +29,6 @@
 #include "mac.h"
 #include "radiotap.h"
 #include "dot11.h"
+#include "gtrace.h"
 
 static const int BUF_SIZE=1024;

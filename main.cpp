@@ -17,10 +17,14 @@ char errbuf[PCAP_ERRBUF_SIZE];
 
 int client_sock;
 int server_sock;
-bool ap_active;
-bool hopping_active;
-bool staion_active;
+volatile bool ap_active;
+volatile bool hopping_active;
+volatile bool staion_active;
 std::vector<int> channel_list;
+int channel_index = 0;
+
+std::thread * t_hopping_chan {nullptr};
+std::thread * t_get_ap {nullptr};
 
 bool get_channel()
 {
@@ -54,14 +58,21 @@ bool get_channel()
     }
 
     channel_list.pop_back();
-    int k = 0;
-    for(auto iter = channel_list.begin(); iter != channel_list.end(); ++iter){
-        k++;
+
+    if(channel_list.size() % 5 == 0){
+        channel_list.push_back(1);
     }
 
-    auto rng = std::default_random_engine{};
-    std::shuffle(std::begin(channel_list), std::end(channel_list), rng);
-
+    int k = 0;
+    char channel_str[1024] = {0,};
+    for(auto iter = channel_list.begin(); iter != channel_list.end(); ++iter){
+        char tmp_channel[5] = {0};
+        sprintf(tmp_channel, "%d/", channel_list[k]);
+        strcat(channel_str, tmp_channel);
+        k++;
+    }
+    GTRACE("channel list : %s", channel_str);
+    
     return true;
 }
 
@@ -69,17 +80,17 @@ void hopping_func()
 {
     std::string system_string;
 
-    while (true)
+    int index = channel_index;
+
+    while (hopping_active)
     {
-        for (int channel : channel_list)
-        {
-            if (hopping_active)
-            {
-                system_string = "iwconfig wlan0 channel " + std::to_string(channel);
-                system(system_string.c_str());
-                usleep(1000000);
-            }
+        system_string = "iwconfig wlan0 channel " + std::to_string(channel_list[index]);
+        system(system_string.c_str());
+        index += 5;
+        if(index > channel_list.size()-1){
+            index -= channel_list.size();
         }
+        usleep(1000000);
     }
 }
 
@@ -215,20 +226,28 @@ void get_ap()
 
 int main(int argc, char *argv[])
 {
+    gtrace_close();
+    gtrace_open("127.0.0.1", 8908, false, "topnviewerd.log");
     int server_port = 2345;
+
+    GTRACE("topnviewerd start.");
 
     //socket connection
     {
         if ((server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
         {
+            GTRACE("socket() failed.");
             return -1;
         }
+        GTRACE("socket() success.");
 
         int option = 1;
         if (setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)) < 0)
         {
+            GTRACE("setsockopt() failed.");
             return -1;
         }
+        GTRACE("setsockopt() success.");
 
         struct sockaddr_in server_addr, client_addr;
         memset(&server_addr, 0x00, sizeof(server_addr));
@@ -240,17 +259,24 @@ int main(int argc, char *argv[])
 
         if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         {
+            GTRACE("bind() failed.");
             return -1;
         }
+        GTRACE("bind() success.");
 
         if (listen(server_sock, 5) < 0)
         {
+            GTRACE("listen() failed.");
             return -1;
         }
+        GTRACE("listen() success.");
 
         if ((client_sock = accept(server_sock, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_size)) < 0)
         {
+            GTRACE("accept() failed.");
+            return -1;
         }
+        GTRACE("accept() success.");
 
     }
 
@@ -265,8 +291,10 @@ int main(int argc, char *argv[])
         {
             memcpy(buf, "5", 1);
             send_data(client_sock, buf);
+            GTRACE("pcap_open_live() failed.");
             return -1;
         }
+        GTRACE("pcap_open_live() success.");
         memcpy(buf, "6", 1);
         send_data(client_sock, buf);
     }
@@ -280,10 +308,6 @@ int main(int argc, char *argv[])
         get_channel();
 
         hopping_active = false;
-        std::thread t = std::thread(hopping_func);
-        t.detach();
-
-        sleep(1);
 
         while (true)
         {
@@ -308,13 +332,23 @@ int main(int argc, char *argv[])
             {
                 hopping_active = true;
                 ap_active = true;
-                hopping_active = true;
-                std::thread t = std::thread(get_ap);
-                t.detach();
+                if(t_hopping_chan != nullptr){
+                    GTRACE("Failed to create hopping thread.(nullptr)");
+                }
+                t_hopping_chan = new std::thread(hopping_func);
+
+                t_get_ap = new std::thread(get_ap);
             }
             else if (!memcmp(buf, "3", 1)) // hopping stop
             {
                 hopping_active = false;
+                if(t_hopping_chan != nullptr){
+                    GTRACE("Failed to join hopping thread.(nullptr)");
+                }else{
+                    t_hopping_chan->join();
+                    delete t_hopping_chan;
+                    t_hopping_chan = nullptr;
+                }
             }
             else if (!memcmp(buf, "4", 1)) // set channel
             {
