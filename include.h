@@ -30,5 +30,12 @@
 #include "radiotap.h"
 #include "dot11.h"
 #include "gtrace.h"
+#include "gbeaconhdr.h"
+#include "gcommon.h"
+#include "gdot11hdr.h"
+#include "gmac.h"
+#include "gqosnullhdr.h"
+#include "gradiotaphdr.h"
+#include "gssg.h"
 
 static const int BUF_SIZE=1024;

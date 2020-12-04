@@ -11,20 +11,18 @@ int debug_num;
 static std::map<MAC, ap_map_info> ap_map;
 static std::map<MAC, bool> ap_map_broadcast;
 
-pcap_t *handle;
-char dev[BUF_SIZE] = {0};
-char errbuf[PCAP_ERRBUF_SIZE];
-
 int client_sock;
 int server_sock;
 volatile bool ap_active;
 volatile bool hopping_active;
-volatile bool staion_active;
+volatile bool station_active;
 std::vector<int> channel_list;
+std::string apmac;
 int channel_index = 0;
 
 std::thread * t_hopping_chan {nullptr};
 std::thread * t_get_ap {nullptr};
+std::thread * t_get_station {nullptr};
 
 bool get_channel()
 {
@@ -78,6 +76,7 @@ bool get_channel()
 
 void hopping_func()
 {
+    GTRACE("hopping thread start.");
     std::string system_string;
 
     int index = channel_index;
@@ -86,18 +85,40 @@ void hopping_func()
     {
         system_string = "iwconfig wlan0 channel " + std::to_string(channel_list[index]);
         system(system_string.c_str());
-        index += 5;
-        if(index > channel_list.size()-1){
-            index -= channel_list.size();
-        }
+        GTRACE("%s", system_string.c_str());
+        index = (index + 5) % channel_list.size();
         usleep(1000000);
     }
+    GTRACE("hopping thread end.");
 }
 
-void get_ap()
-{
+void get_station(){
+    pcap_t *handle;
+    char dev[BUF_SIZE] = {0};
+    char errbuf[PCAP_ERRBUF_SIZE];
+    memcpy(dev, "wlan0", 5);
+    handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
 
-    while (ap_active)
+    char buf[1024];
+    memset(buf, 0x00, BUF_SIZE);
+    if (handle == NULL)
+    {
+        memcpy(buf, "5", 1);
+        send_data(client_sock, buf);
+        GTRACE("[get_station] pcap_open_live() failed.");
+        exit(1);
+    }
+    GTRACE("[get_station] pcap_open_live() success.");
+    memcpy(buf, "6", 1);
+    send_data(client_sock, buf);
+
+    Ssg ssg;
+    ssg.interface_ = "wlan0";
+    ssg.filter_ = "ether host " + apmac;
+    ssg.open();
+
+
+    while (station_active)
     {
         struct pcap_pkthdr *header;
         const u_char *packet;
@@ -107,6 +128,103 @@ void get_ap()
             continue;
         if (res == -1 || res == -2)
             break;
+
+        radiotap_header *rt_header = (radiotap_header *)(packet);
+        if(rt_header->it_len < sizeof(radiotap_header) || rt_header->it_len > header->caplen){
+            continue;
+        }
+
+        dot11_mgt_frame *frame = (dot11_mgt_frame *)(packet + rt_header->it_len);
+
+        if (frame->fc.type == dot11_fc::type::CONTROL)
+        {
+            continue;
+        }
+
+        //get station info
+        if ((frame->fc.type == dot11_fc::type::DATA) &&
+         (frame->fc.subtype == dot11_fc::subtype::_NO_DATA || frame->fc.subtype == dot11_fc::subtype::QOS_DATA))
+        {
+            dot11_data_frame *data_frame = (dot11_data_frame *)(packet + rt_header->it_len);
+
+            if (ap_map.find(data_frame->get_BSSID()) == ap_map.end())
+            {
+                continue;
+            }
+
+            uint8_t selected_ap[6] = {0};
+
+            memcpy(selected_ap, data_frame->get_BSSID(), 6);
+
+            MAC BSSID = selected_ap;
+            MAC STATION = data_frame->addr2;
+            uint8_t antsignal = *rt_header->radiotap_present_flag(DBM_ANTSIGNAL);
+
+            //append ap_map_broadcast
+            if (ap_map_broadcast.find(data_frame->get_BSSID()) == ap_map_broadcast.end())
+            {
+                ap_map_broadcast[selected_ap] = false;
+            }
+
+            data_station_info d_s_info;
+            d_s_info.BSSID = BSSID;
+            d_s_info.STATION = STATION;
+            d_s_info.antsignal = antsignal;
+            d_s_info.isAttack = false;
+
+            {
+                ap_map[selected_ap].map_station[STATION] = d_s_info;
+
+                std::string buf_string;
+                char data[BUF_SIZE] = {0};
+                buf_string = d_s_info.String();
+
+                memcpy(data, buf_string.c_str(), buf_string.length());
+
+                send_data(client_sock, data);
+            }
+        }
+
+    }
+    ssg.close();
+    pcap_close(handle);
+    GTRACE("pcap_close().");
+
+}
+
+void get_ap()
+{
+    pcap_t *handle;
+    char dev[BUF_SIZE] = {0};
+    char errbuf[PCAP_ERRBUF_SIZE];
+    memcpy(dev, "wlan0", 5);
+    handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
+
+    char buf[1024];
+    memset(buf, 0x00, BUF_SIZE);
+    if (handle == NULL)
+    {
+        memcpy(buf, "5", 1);
+        send_data(client_sock, buf);
+        GTRACE("[get_ap] pcap_open_live() failed.");
+        exit(1);
+    }
+    GTRACE("[get_ap] pcap_open_live() success.");
+    memcpy(buf, "6", 1);
+    send_data(client_sock, buf);
+    while (ap_active)
+    {
+        struct pcap_pkthdr *header;
+        const u_char *packet;
+        int res = pcap_next_ex(handle, &header, &packet);
+
+        if (res == 0)
+            continue;
+        if (res == -1 || res == -2){
+            GTRACE("[get_ap] pcap_next_ex() failed.");
+            break;
+        }
+            
 
         radiotap_header *rt_header = (radiotap_header *)(packet);
         if(rt_header->it_len < sizeof(radiotap_header) || rt_header->it_len > header->caplen){
@@ -222,6 +340,9 @@ void get_ap()
             }
         }
     }
+    ap_active = false;
+    pcap_close(handle);
+    GTRACE("pcap_close().");
 }
 
 int main(int argc, char *argv[])
@@ -280,25 +401,6 @@ int main(int argc, char *argv[])
 
     }
 
-    //pcap open
-    {
-        memcpy(dev, "wlan0", 5);
-        handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
-
-        char buf[1024];
-        memset(buf, 0x00, BUF_SIZE);
-        if (handle == NULL)
-        {
-            memcpy(buf, "5", 1);
-            send_data(client_sock, buf);
-            GTRACE("pcap_open_live() failed.");
-            return -1;
-        }
-        GTRACE("pcap_open_live() success.");
-        memcpy(buf, "6", 1);
-        send_data(client_sock, buf);
-    }
-
     //switch
     {
         char buf[BUF_SIZE] = {0};
@@ -330,24 +432,47 @@ int main(int argc, char *argv[])
             }
             else if (!memcmp(buf, "2", 1)) // hopping start
             {
+                station_active = false;
+                if(t_get_station == nullptr){
+                    GTRACE("Failed to join get_station thread.(nullptr)");
+                }else{
+                    t_get_station->join();
+                    delete t_get_station;
+                    t_get_station = nullptr;
+                }
+
                 hopping_active = true;
                 ap_active = true;
                 if(t_hopping_chan != nullptr){
                     GTRACE("Failed to create hopping thread.(nullptr)");
+                    hopping_active = false;
                 }
-                t_hopping_chan = new std::thread(hopping_func);
+                else t_hopping_chan = new std::thread(hopping_func);
 
-                t_get_ap = new std::thread(get_ap);
+                if(t_get_ap != nullptr){
+                    GTRACE("Failed to create get_ap thread.(nullptr)");
+                    ap_active = false;
+                }
+                else t_get_ap = new std::thread(get_ap);
             }
             else if (!memcmp(buf, "3", 1)) // hopping stop
             {
                 hopping_active = false;
-                if(t_hopping_chan != nullptr){
+                if(t_hopping_chan == nullptr){
                     GTRACE("Failed to join hopping thread.(nullptr)");
                 }else{
                     t_hopping_chan->join();
                     delete t_hopping_chan;
                     t_hopping_chan = nullptr;
+                }
+
+                ap_active = false;
+                if(t_get_ap == nullptr){
+                    GTRACE("Failed to join get_ap thread.(nullptr)");
+                }else{
+                    t_get_ap->join();
+                    delete t_get_ap;
+                    t_get_ap = nullptr;
                 }
             }
             else if (!memcmp(buf, "4", 1)) // set channel
@@ -356,9 +481,17 @@ int main(int argc, char *argv[])
                 recv_data(client_sock, buf);
                 std::string system_string;
                 std::string channel = buf;
+                recv_data(client_sock, buf);
                 system_string = "iwconfig wlan0 channel " + channel;
                 usleep(1000000);
                 system(system_string.c_str());
+                station_active = true;
+
+                if(t_get_station != nullptr){
+                    GTRACE("Failed to create get_station thread.(nullptr)");
+                    station_active = false;
+                }
+                else t_get_station = new std::thread(get_station);
             }
             else
             {
@@ -366,8 +499,5 @@ int main(int argc, char *argv[])
             }
         }
     }
-
-    pcap_close(handle);
-
     return 0;
 }
