@@ -31,7 +31,7 @@ std::thread * t_get_station {nullptr};
 bool get_channel()
 {
     char temp[BUF_SIZE] = {0};
-    FILE *stream = popen("iwlist wlan0 channel", "r");
+    FILE *stream = popen("./iwlist wlan0 channel", "r");
 
     std::string s = "";
 
@@ -87,7 +87,7 @@ void hopping_func()
 
     while (hopping_active)
     {
-        system_string = "iwconfig wlan0 channel " + std::to_string(channel_list[index]);
+        system_string = "./iwconfig wlan0 channel " + std::to_string(channel_list[index]);
         system(system_string.c_str());
         GTRACE("%s", system_string.c_str());
         index = (index + 5) % channel_list.size();
@@ -498,7 +498,7 @@ int main(int argc, char *argv[])
                 recv_data(client_sock, buf);
                 std::string str(buf);
                 apmac = buf;
-                system_string = "iwconfig wlan0 channel " + channel;
+                system_string = "./iwconfig wlan0 channel " + channel;
                 usleep(1000000);
                 system(system_string.c_str());
                 station_active = true;
