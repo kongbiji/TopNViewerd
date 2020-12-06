@@ -15,7 +15,11 @@ int client_sock;
 int server_sock;
 volatile bool ap_active;
 volatile bool hopping_active;
-volatile bool station_active;
+bool station_active;
+
+pcap_t *ap_handle;
+pcap_t *station_handle;
+
 std::vector<int> channel_list;
 std::string apmac;
 int channel_index = 0;
@@ -87,21 +91,20 @@ void hopping_func()
         system(system_string.c_str());
         GTRACE("%s", system_string.c_str());
         index = (index + 5) % channel_list.size();
-        usleep(1000000);
+        usleep(600000);
     }
     GTRACE("hopping thread end.");
 }
 
 void get_station(){
-    pcap_t *handle;
     char dev[BUF_SIZE] = {0};
     char errbuf[PCAP_ERRBUF_SIZE];
     memcpy(dev, "wlan0", 5);
-    handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
+    station_handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
 
     char buf[1024];
     memset(buf, 0x00, BUF_SIZE);
-    if (handle == NULL)
+    if (station_handle == NULL)
     {
         memcpy(buf, "5", 1);
         send_data(client_sock, buf);
@@ -122,12 +125,19 @@ void get_station(){
     {
         struct pcap_pkthdr *header;
         const u_char *packet;
-        int res = pcap_next_ex(handle, &header, &packet);
+        int res = pcap_next_ex(station_handle, &header, &packet);
 
         if (res == 0)
             continue;
-        if (res == -1 || res == -2)
-            break;
+        if (res == -1 || res == -2){
+            GTRACE("pcap_next_ex() failed.");
+            system("su -c \"ifconfig wlan0 down\"");
+            system("export LD_PRELOAD=/system/lib/libfakeioctl.so");
+            system("su -c \"nexutil -m2\"");
+            system("su -c \"ifconfig wlan0 up\"");
+            GTRACE("set monitor mode again.");
+            continue;
+        }
 
         radiotap_header *rt_header = (radiotap_header *)(packet);
         if(rt_header->it_len < sizeof(radiotap_header) || rt_header->it_len > header->caplen){
@@ -187,22 +197,21 @@ void get_station(){
 
     }
     ssg.close();
-    pcap_close(handle);
+    pcap_close(station_handle);
     GTRACE("pcap_close().");
 
 }
 
 void get_ap()
 {
-    pcap_t *handle;
     char dev[BUF_SIZE] = {0};
     char errbuf[PCAP_ERRBUF_SIZE];
     memcpy(dev, "wlan0", 5);
-    handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
+    ap_handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
 
     char buf[1024];
     memset(buf, 0x00, BUF_SIZE);
-    if (handle == NULL)
+    if (ap_handle == NULL)
     {
         memcpy(buf, "5", 1);
         send_data(client_sock, buf);
@@ -212,17 +221,23 @@ void get_ap()
     GTRACE("[get_ap] pcap_open_live() success.");
     memcpy(buf, "6", 1);
     send_data(client_sock, buf);
+
     while (ap_active)
     {
         struct pcap_pkthdr *header;
         const u_char *packet;
-        int res = pcap_next_ex(handle, &header, &packet);
+        int res = pcap_next_ex(ap_handle, &header, &packet);
 
         if (res == 0)
             continue;
         if (res == -1 || res == -2){
-            GTRACE("[get_ap] pcap_next_ex() failed.");
-            break;
+            GTRACE("pcap_next_ex() failed.");
+            system("su -c \"ifconfig wlan0 down\"");
+            system("export LD_PRELOAD=/system/lib/libfakeioctl.so");
+            system("su -c \"nexutil -m2\"");
+            system("su -c \"ifconfig wlan0 up\"");
+            GTRACE("set monitor mode again.");
+            continue;
         }
             
 
@@ -331,7 +346,7 @@ void get_ap()
                     usleep(90000); // 9000 10 2000
                     for (int i = 0; i < 10; i++)
                     {
-                        if (pcap_sendpacket(handle, packet, header->caplen) != 0)
+                        if (pcap_sendpacket(ap_handle, packet, header->caplen) != 0)
                         {
                         }
                         usleep(2000);
@@ -341,7 +356,7 @@ void get_ap()
         }
     }
     ap_active = false;
-    pcap_close(handle);
+    pcap_close(ap_handle);
     GTRACE("pcap_close().");
 }
 
@@ -352,6 +367,11 @@ int main(int argc, char *argv[])
     int server_port = 2345;
 
     GTRACE("topnviewerd start.");
+    system("su -c \"ifconfig wlan0 down\"");
+    system("export LD_PRELOAD=/system/lib/libfakeioctl.so");
+    system("su -c \"nexutil -m2\"");
+    system("su -c \"ifconfig wlan0 up\"");
+    GTRACE("set monitor mode.");
 
     //socket connection
     {
@@ -422,14 +442,8 @@ int main(int argc, char *argv[])
             }
 
             memset(data, 0x00, BUF_SIZE);
-
-            if (!memcmp(buf, "1", 1)) // scan start
-            {
-                // ap_active = true;
-                // hopping_active = true;
-                // std::thread t = std::thread(get_ap);
-                // t.detach();
-            }
+            if (!memcmp(buf, "1", 1)) // hopping start
+            {}
             else if (!memcmp(buf, "2", 1)) // hopping start
             {
                 station_active = false;
@@ -482,6 +496,8 @@ int main(int argc, char *argv[])
                 std::string system_string;
                 std::string channel = buf;
                 recv_data(client_sock, buf);
+                std::string str(buf);
+                apmac = buf;
                 system_string = "iwconfig wlan0 channel " + channel;
                 usleep(1000000);
                 system(system_string.c_str());
@@ -499,5 +515,8 @@ int main(int argc, char *argv[])
             }
         }
     }
+    close(client_sock);
+    close(server_sock);
+    GTRACE("End of program.");
     return 0;
 }
