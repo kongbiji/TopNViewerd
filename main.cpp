@@ -17,6 +17,8 @@ volatile bool ap_active;
 volatile bool hopping_active;
 bool station_active;
 
+int current_channel;
+
 pcap_t *ap_handle;
 pcap_t *station_handle;
 
@@ -108,10 +110,10 @@ void get_station(){
     {
         memcpy(buf, "5", 1);
         send_data(client_sock, buf);
-        GTRACE("[get_station] pcap_open_live() failed.");
+        GTRACE("pcap_open_live() failed.");
         exit(1);
     }
-    GTRACE("[get_station] pcap_open_live() success.");
+    GTRACE("pcap_open_live() success.");
     memcpy(buf, "6", 1);
     send_data(client_sock, buf);
 
@@ -215,10 +217,10 @@ void get_ap()
     {
         memcpy(buf, "5", 1);
         send_data(client_sock, buf);
-        GTRACE("[get_ap] pcap_open_live() failed.");
+        GTRACE("pcap_open_live() failed.");
         exit(1);
     }
-    GTRACE("[get_ap] pcap_open_live() success.");
+    GTRACE("pcap_open_live() success.");
     memcpy(buf, "6", 1);
     send_data(client_sock, buf);
 
@@ -495,6 +497,7 @@ int main(int argc, char *argv[])
                 recv_data(client_sock, buf);
                 std::string system_string;
                 std::string channel = buf;
+                current_channel = atoi(buf);
                 recv_data(client_sock, buf);
                 std::string str(buf);
                 apmac = buf;
