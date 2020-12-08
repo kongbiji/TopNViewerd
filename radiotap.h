@@ -50,3 +50,46 @@ typedef struct radiotap_header {
 }radiotap_header;
 
 #pragma pack(pop)
+
+#pragma pack(push, 1)
+typedef struct present_flags{
+    uint8_t tsft:1;
+    uint8_t flags:1;
+    uint8_t rate:1;
+    uint8_t channel:1;
+    uint8_t fhss:1;
+    uint8_t dbm_antenna_sig:1; // antenna signal awlays 5th bits
+    uint8_t dbm_antenna_noise:1;
+    uint8_t lock_quality:1;
+    uint8_t tx_attenuation:1;
+    uint8_t db_tx_attenuation:1;
+    uint8_t dbm_tx_power:1;
+    uint8_t antenna:1;
+    uint8_t db_antenna_sig:1;
+    uint8_t db_antenna_noise:1;
+    uint8_t rx_flags:1;
+    uint8_t padding:3;
+    uint8_t channel_plus:1;
+    uint8_t mcs_info:1;
+    uint8_t a_mpdu_stat:1;
+    uint8_t vht_info:1;
+    uint8_t frame_timestamp:1;
+    uint8_t he_info:1;
+    uint8_t he_mu_info:1;
+    uint8_t padding2:1;
+    uint8_t zero_len_psdu:1;
+    uint8_t l_sig:1;
+    uint8_t reserved:1;
+    uint8_t radiotap_ns_next:1;
+    uint8_t vendor_ns_next:1;
+    uint8_t ext:1;
+}Present_flags;
+
+typedef struct radiotap_header_tmp{ 
+    uint8_t h_revision;
+    uint8_t h_pad;
+    uint16_t h_len;
+    Present_flags presnt_flags;
+}radiotap_header_tmp;
+
+#pragma pack(pop)

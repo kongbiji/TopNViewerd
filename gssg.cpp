@@ -19,9 +19,9 @@ bool Ssg::BeaconFrame::init(BeaconHdr* beaconHdr, uint32_t size) {
 void Ssg::BeaconFrame::send(pcap_t* handle) {
 	int res = pcap_sendpacket(handle, (const u_char*)&radiotapHdr_, size_);
 	static int count = 0;
-	if (count++ % 100 == 0) GTRACE("pcap_sendpacket %u return %d\n", size_, res); // gilgil temp 2020.11.09
+	if (count++ % 100 == 0) GTRACE("pcap_sendpacket %u return %d", size_, res); // gilgil temp 2020.11.09
 	if (res != 0) {
-		GTRACE("pcap_sendpacket return %d - %s handle=%p size_=%u\n", res, pcap_geterr(handle), handle, size_);
+		GTRACE("pcap_sendpacket return %d - %s handle=%p size_=%u", res, pcap_geterr(handle), handle, size_);
 	}
 }
 
@@ -82,7 +82,7 @@ void Ssg::_scanThread(Ssg* ssg) {
 }
 
 void Ssg::scanThread() {
-	GTRACE("scanThread beg\n");
+	GTRACE("scanThread beg");
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t* handle = pcap_open_live(interface_.c_str(), 11000, 1, 1, errbuf);
 	if (handle == nullptr) {
@@ -157,11 +157,12 @@ void Ssg::scanThread() {
 			ApMap::iterator it = apMap_.find(bssid);
 
 			if (it == apMap_.end()) {
-				GTRACE("New AP(%s) added\n", std::string(bssid).c_str());
+				GTRACE("New AP(%s) added", std::string(bssid).c_str());
 				tim->control_ = option_.tim_.control_;
 				tim->bitmap_ = option_.tim_.bitmap_;
 				ApInfo apInfo;
-				if (!apInfo.beaconFrame_.init(beaconHdr, sizeof(RadiotapHdr) + size)) continue;
+				if (!apInfo.beaconFrame_.init(beaconHdr, sizeof(RadiotapHdr) + size - option_.fcsSize_)) continue;
+				GTRACE("beacon size=%d", size);
 				apInfo.sendInterval_ = Diff(beaconHdr->fix_.beaconInterval_ * 1024000);
 				apInfo.nextFrameSent_ = Timer::now() + apInfo.sendInterval_;
 				apMap_.insert({bssid, apInfo});
@@ -181,7 +182,7 @@ void Ssg::scanThread() {
 		}
 	}
 	pcap_close(handle);
-	GTRACE("scanThread end\n");
+	GTRACE("scanThread end");
 }
 
 void Ssg::_sendThread(Ssg* ssg) {
@@ -190,7 +191,7 @@ void Ssg::_sendThread(Ssg* ssg) {
 }
 
 void Ssg::sendThread() {
-	GTRACE("sendThread beg\n");
+	GTRACE("sendThread beg");
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t* handle = pcap_open_live(interface_.c_str(), 11000, 1, 1, errbuf);
 	if (handle == nullptr) {
@@ -215,6 +216,7 @@ void Ssg::sendThread() {
 			}
 			if (now >= apInfo.nextFrameSent_ + option_.sendOffset_) {
 				le16_t seq = apInfo.beaconFrame_.beaconHdr_.seq_;
+				// GTRACE("seq=%d", seq); // gilgil temp 2020.12.07
 				seq++;
 				apInfo.beaconFrame_.beaconHdr_.seq_ = seq;
 				apInfo.beaconFrame_.send(handle);
@@ -245,7 +247,7 @@ void Ssg::sendThread() {
 			std::this_thread::sleep_for(minWaitTime);
 	}
 	pcap_close(handle);
-	GTRACE("sendThread end\n");
+	GTRACE("sendThread end");
 }
 
 void Ssg::_deleteThread(Ssg* ssg) {
@@ -254,7 +256,7 @@ void Ssg::_deleteThread(Ssg* ssg) {
 }
 
 void Ssg::deleteThread() {
-	GTRACE("deleteThread beg\n");
+	GTRACE("deleteThread beg");
 	while (active_) {
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 		Clock now = Timer::now();
@@ -274,7 +276,7 @@ void Ssg::deleteThread() {
 		}
 		apMap_.mutex_.unlock();
 	}
-	GTRACE("deleteThread end\n");
+	GTRACE("deleteThread end");
 }
 
 void Ssg::processQosNull(QosNullHdr* qosNullHdr) {

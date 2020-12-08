@@ -153,6 +153,33 @@ void get_station(){
             continue;
         }
 
+        // check channel
+        int captured_channel;
+        unsigned char * r_header_iter;
+        radiotap_header_tmp * r_header = (radiotap_header_tmp *)packet;
+        r_header_iter = (unsigned char *)(packet + sizeof(radiotap_header_tmp));
+        if( r_header->presnt_flags.tsft == 1 ){
+            r_header_iter = r_header_iter + sizeof(uint64_t);
+        }
+        if( r_header->presnt_flags.flags == 1 ){
+            r_header_iter = r_header_iter + sizeof(uint8_t);
+        }
+        if( r_header->presnt_flags.rate == 1 ){
+            r_header_iter = r_header_iter + sizeof(uint8_t);
+        }
+        if( r_header->presnt_flags.channel == 1 ){
+            captured_channel = ((int)(r_header_iter[0] | (r_header_iter[1] << 8)) - 2412) / 5 + 1;
+        }
+        GTRACE("current channel: %d, captured channel: %d", current_channel, captured_channel);
+        if(current_channel != captured_channel){
+            GTRACE("channel changed.");
+            std::string system_string = "./iwconfig wlan0 channel " + std::to_string(current_channel);
+            system(system_string.c_str());
+            usleep(800000);
+            GTRACE("channel restore.");
+            continue;
+        }
+
         //get station info
         if ((frame->fc.type == dot11_fc::type::DATA) &&
          (frame->fc.subtype == dot11_fc::subtype::_NO_DATA || frame->fc.subtype == dot11_fc::subtype::QOS_DATA))

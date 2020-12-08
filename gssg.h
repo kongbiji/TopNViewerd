@@ -24,6 +24,7 @@ struct Ssg { // Station Signal Generator
 		double changeIntervalAlpha_{0}; // {0.1};
 		bool debugQosNull_{false};
 		bool checkOnly_{false};
+		int fcsSize_{0}; // 0 byte
 	} option_;
 
 	struct BeaconFrame {
