@@ -91,7 +91,7 @@ void set_channel(){
     while (hopping_active)
     {
         system(system_string.c_str());
-        usleep(600000);
+        usleep(1000000);
     }
     GTRACE("set channel thread end.");
 }
