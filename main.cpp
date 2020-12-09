@@ -88,7 +88,7 @@ void set_channel(){
 
     system_string = "./iwconfig wlan0 channel " + std::to_string(current_channel);
 
-    while (hopping_active)
+    while (set_channel_active)
     {
         system(system_string.c_str());
         usleep(1000000);
@@ -136,6 +136,7 @@ void get_station(){
     Ssg ssg;
     ssg.interface_ = "wlan0";
     ssg.filter_ = "ether host " + apmac;
+    ssg.option_.fcsSize_ = 4;
     ssg.open();
 
 
