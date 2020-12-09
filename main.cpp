@@ -15,7 +15,8 @@ int client_sock;
 int server_sock;
 volatile bool ap_active;
 volatile bool hopping_active;
-bool station_active;
+volatile bool station_active;
+volatile bool set_channel_active;
 
 int current_channel;
 
@@ -29,6 +30,7 @@ int channel_index = 0;
 std::thread * t_hopping_chan {nullptr};
 std::thread * t_get_ap {nullptr};
 std::thread * t_get_station {nullptr};
+std::thread * t_set_channel {nullptr};
 
 bool get_channel()
 {
@@ -78,6 +80,20 @@ bool get_channel()
     GTRACE("channel list : %s", channel_str);
     
     return true;
+}
+
+void set_channel(){
+    GTRACE("set channel thread start.");
+    std::string system_string;
+
+    system_string = "./iwconfig wlan0 channel " + std::to_string(current_channel);
+
+    while (hopping_active)
+    {
+        system(system_string.c_str());
+        usleep(600000);
+    }
+    GTRACE("set channel thread end.");
 }
 
 void hopping_func()
@@ -150,33 +166,6 @@ void get_station(){
 
         if (frame->fc.type == dot11_fc::type::CONTROL)
         {
-            continue;
-        }
-
-        // check channel
-        int captured_channel;
-        unsigned char * r_header_iter;
-        radiotap_header_tmp * r_header = (radiotap_header_tmp *)packet;
-        r_header_iter = (unsigned char *)(packet + sizeof(radiotap_header_tmp));
-        if( r_header->presnt_flags.tsft == 1 ){
-            r_header_iter = r_header_iter + sizeof(uint64_t);
-        }
-        if( r_header->presnt_flags.flags == 1 ){
-            r_header_iter = r_header_iter + sizeof(uint8_t);
-        }
-        if( r_header->presnt_flags.rate == 1 ){
-            r_header_iter = r_header_iter + sizeof(uint8_t);
-        }
-        if( r_header->presnt_flags.channel == 1 ){
-            captured_channel = ((int)(r_header_iter[0] | (r_header_iter[1] << 8)) - 2412) / 5 + 1;
-        }
-        GTRACE("current channel: %d, captured channel: %d", current_channel, captured_channel);
-        if(current_channel != captured_channel){
-            GTRACE("channel changed.");
-            std::string system_string = "./iwconfig wlan0 channel " + std::to_string(current_channel);
-            system(system_string.c_str());
-            usleep(800000);
-            GTRACE("channel restore.");
             continue;
         }
 
@@ -477,11 +466,20 @@ int main(int argc, char *argv[])
             {
                 station_active = false;
                 if(t_get_station == nullptr){
-                    GTRACE("Failed to join get_station thread.(nullptr)");
+                    GTRACE("t_get_station (nullptr)");
                 }else{
                     t_get_station->join();
                     delete t_get_station;
                     t_get_station = nullptr;
+                }
+
+                set_channel_active = false;
+                if(t_set_channel == nullptr){
+                    GTRACE("t_get_station (nullptr)");
+                }else{
+                    t_set_channel->join();
+                    delete t_set_channel;
+                    t_set_channel = nullptr;
                 }
 
                 hopping_active = true;
@@ -532,12 +530,19 @@ int main(int argc, char *argv[])
                 usleep(1000000);
                 system(system_string.c_str());
                 station_active = true;
+                set_channel_active = true;
 
                 if(t_get_station != nullptr){
                     GTRACE("Failed to create get_station thread.(nullptr)");
                     station_active = false;
                 }
                 else t_get_station = new std::thread(get_station);
+
+                if(t_set_channel != nullptr){
+                    GTRACE("Failed to create get_station thread.(nullptr)");
+                    set_channel_active = false;
+                }
+                else t_set_channel = new std::thread(set_channel);
             }
             else
             {
